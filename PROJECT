@@ -1,0 +1,7 @@
+domain: haase.de
+repo: github.com/hendrikhh/kafka-topic-operator
+resources:
+- group: kafka
+  kind: KafkaTopic
+  version: v1alpha1
+version: "2"
