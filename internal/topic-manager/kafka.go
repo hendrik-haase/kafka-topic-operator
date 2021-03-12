@@ -18,32 +18,6 @@ func New() *TopicManager {
 	}
 
 	return &TopicManager{client: client}
-
-	//ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	//defer cancel()
-	//_, err = client.CreateTopics(ctx, []kafka.TopicSpecification{{
-	//	Topic:             "test",
-	//	NumPartitions:     1,
-	//	ReplicationFactor: 1,
-	//	Config: map[string]string{
-	//		"compression.type": "gzip",
-	//	},
-	//}})
-	//if err != nil {
-	//	panic(err)
-	//}
-	//
-	//res, err := client.DescribeConfigs(ctx, []kafka.ConfigResource{{
-	//	Type: kafka.ResourceTopic,
-	//	Name: "testt",
-	//}})
-	//
-	//if err != nil {
-	//	panic(err)
-	//}
-	//
-	//fmt.Printf("result: %+v", res[0].Error)
-	//kafka.ErrUnknownTopicOrPart
 }
 
 func (tm *TopicManager) UpsertTopic(name string, partitions int, replicas int, config map[string]string) error {
@@ -85,24 +59,17 @@ func (tm *TopicManager) UpsertTopic(name string, partitions int, replicas int, c
 
 		if kafkaErr.Code() == kafka.ErrNoError {
 			fmt.Printf("need to update topic\n")
+			//TODO: handle replicas -> can't be updated
+			err := tm.updateTopic(ctx, name, partitions, config)
+			if err != nil {
+				return fmt.Errorf("can't update topic: %v", err)
+			}
 			return nil
 		}
 		return fmt.Errorf("can't fetch topic configuration: %d", kafkaErr.Code())
 	}
 
 	return fmt.Errorf("response error should not be empty")
-
-	//_, err := tm.client.CreateTopics(ctx, []kafka.TopicSpecification{{
-	//	Topic:             name,
-	//	NumPartitions:     1,
-	//	ReplicationFactor: 1,
-	//	Config: map[string]string{
-	//		"compression.type": "gzip",
-	//	},
-	//}})
-	//if err != nil {
-	//	panic(err)
-	//}
 }
 
 func (tm *TopicManager) createTopic(ctx context.Context, name string, partitions int, replicas int, config map[string]string) error {
@@ -112,6 +79,63 @@ func (tm *TopicManager) createTopic(ctx context.Context, name string, partitions
 		ReplicationFactor: replicas,
 		Config:            config,
 	}})
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func (tm *TopicManager) updateTopic(ctx context.Context, name string, partitions int, config map[string]string) error {
+
+	var configEntries []kafka.ConfigEntry
+
+	for key, value := range config {
+		configEntries = append(configEntries, kafka.ConfigEntry{
+			Name:      key,
+			Value:     value,
+			Operation: kafka.AlterOperationSet,
+		})
+	}
+
+	_, err := tm.client.AlterConfigs(ctx, []kafka.ConfigResource{{
+		Type:   kafka.ResourceTopic,
+		Name:   name,
+		Config: configEntries,
+	}})
+
+	if err != nil {
+		return err
+	}
+
+	meta, err := tm.client.GetMetadata(&name, false, 10*1000)
+	if err != nil {
+		return fmt.Errorf("can't fetch metadata for topic %s: %v", name, err)
+	}
+
+	//TODO: could meta.Topics[name] be nil?
+	partitionCount := len(meta.Topics[name].Partitions)
+	if partitionCount > partitions {
+		return fmt.Errorf("can't reduce partition count")
+	}
+
+	_, err = tm.client.CreatePartitions(ctx, []kafka.PartitionsSpecification{{
+		Topic:      name,
+		IncreaseTo: partitions,
+	}})
+
+	if err != nil {
+		return fmt.Errorf("can't create new partitions: %v", err)
+	}
+
+	return nil
+}
+
+func (tm *TopicManager) DeleteTopic(name string) error {
+	// create context with timeout
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	_, err := tm.client.DeleteTopics(ctx, []string{name})
 	if err != nil {
 		return err
 	}
