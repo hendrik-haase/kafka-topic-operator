@@ -18,6 +18,7 @@ package main
 
 import (
 	"flag"
+	topic_manager "github.com/hendrikhh/kafka-topic-operator/internal/topic-manager"
 	"os"
 
 	"k8s.io/apimachinery/pkg/runtime"
@@ -67,11 +68,16 @@ func main() {
 	}
 
 	if err = (&controllers.KafkaTopicReconciler{
-		Client: mgr.GetClient(),
-		Log:    ctrl.Log.WithName("controllers").WithName("KafkaTopic"),
-		Scheme: mgr.GetScheme(),
+		Client:       mgr.GetClient(),
+		Log:          ctrl.Log.WithName("controllers").WithName("KafkaTopic"),
+		Scheme:       mgr.GetScheme(),
+		TopicManager: topic_manager.New(),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "KafkaTopic")
+		os.Exit(1)
+	}
+	if err = (&kafkav1alpha1.KafkaTopic{}).SetupWebhookWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create webhook", "webhook", "KafkaTopic")
 		os.Exit(1)
 	}
 	// +kubebuilder:scaffold:builder

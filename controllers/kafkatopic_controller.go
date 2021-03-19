@@ -18,6 +18,8 @@ package controllers
 
 import (
 	"context"
+	"fmt"
+	topic_manager "github.com/hendrikhh/kafka-topic-operator/internal/topic-manager"
 
 	"github.com/go-logr/logr"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -30,18 +32,30 @@ import (
 // KafkaTopicReconciler reconciles a KafkaTopic object
 type KafkaTopicReconciler struct {
 	client.Client
-	Log    logr.Logger
-	Scheme *runtime.Scheme
+	Log          logr.Logger
+	Scheme       *runtime.Scheme
+	TopicManager *topic_manager.TopicManager
 }
 
 // +kubebuilder:rbac:groups=kafka.haase.de,resources=kafkatopics,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=kafka.haase.de,resources=kafkatopics/status,verbs=get;update;patch
 
 func (r *KafkaTopicReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) {
-	_ = context.Background()
-	_ = r.Log.WithValues("kafkatopic", req.NamespacedName)
+	ctx := context.Background()
+	log := r.Log.WithValues("kafkatopic", req.NamespacedName)
 
-	// your logic here
+	var topic kafkav1alpha1.KafkaTopic
+	if err := r.Get(ctx, req.NamespacedName, &topic); err != nil {
+		log.Error(err, "unable to fetch KafkaTopic")
+		// we'll ignore not-found errors, since they can't be fixed by an immediate
+		// requeue (we'll need to wait for a new notification), and we can get them
+		// on deleted requests.
+		return ctrl.Result{}, client.IgnoreNotFound(err)
+	}
+
+	if err := r.TopicManager.UpsertTopic(topic.Spec.Name, topic.Spec.Partitions, topic.Spec.Replicas, topic.Spec.Config); err != nil {
+		return ctrl.Result{}, fmt.Errorf("can't upsert topic: %v", err)
+	}
 
 	return ctrl.Result{}, nil
 }

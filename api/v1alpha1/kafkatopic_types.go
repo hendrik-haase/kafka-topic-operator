@@ -28,7 +28,10 @@ type KafkaTopicSpec struct {
 	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
 
-	Name string `json:"name"`
+	Name       string            `json:"name"`
+	Partitions int               `json:"partitions"`
+	Replicas   int               `json:"replicas"`
+	Config     map[string]string `json:"config"`
 }
 
 // KafkaTopicStatus defines the observed state of KafkaTopic
